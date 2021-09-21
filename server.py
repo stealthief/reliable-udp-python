@@ -88,8 +88,10 @@ class Server:
                     res = pickle.loads(symbol)
                     for i in res:
                         self.transmit(self.create_packet(2, i, self.data[i]))
-                    break          
-
+                    for i in range(3):
+                        self.transmit(self.create_packet(3))      
+                elif packet_type == 4:
+                    break
         return True
 
 def arguments():
@@ -147,18 +149,24 @@ def main():
         print(f"Number of gens calced: {num_gens}")
         # Initial transmission
         for i in range(num_gens):
+            print(i)
             packets = {}
+            gen_complete = False
             for j in range(s.gen_size):
                 data = s.get_data(seq)
                 packet = s.create_packet(2, seq, data)
                 s.transmit(packet)
                 seq += 1
-            for i in range(3):
+            for k in range(3):
                 s.transmit(s.create_packet(3))
-
-            s.receive()
+            while not gen_complete:
+                if s.receive():
+                    gen_complete = True
         
-        s.transmit(s.create_packet(4))
+            for l in range(3):
+                s.transmit(s.create_packet(4))
+            
+            print(f"Gen {i} complete")
 
         print("File transfer complete.")
     except KeyboardInterrupt:
