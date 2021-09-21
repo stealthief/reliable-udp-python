@@ -19,6 +19,7 @@ class Client:
         self.data = {}
         self.args = args
         self.erased = 0
+        self.missing = []
 
     def connection(self):
         self.sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM, proto=socket.IPPROTO_UDP)
@@ -29,7 +30,7 @@ class Client:
         self.sock.setblocking(0)
         return True
 
-    def transmit(self, address, packet_type, payload=''):
+    def transmit(self, address, packet_type, payload=b''):
         header = bytearray(2)
         struct.pack_into(
             '<H',
@@ -57,13 +58,19 @@ class Client:
                 elif packet_type == 2:
                     self.data[seq] = symbol
                     try:
-                        missing.remove(seq)
+                        self.missing.remove(seq % 20)
                     except:
                         pass
                 elif packet_type == 3:
-                    self.erased += len(missing)
-                    res = pickle.dumps(missing)
-                    self.transmit(addr, 3, res)
+                    self.erased += len(self.missing)
+                    #print(len(self.missing))
+                    if len(self.missing) != 0:
+                        res = pickle.dumps(self.missing)
+                        self.transmit(addr, 3, res)
+                    else:
+                        for i in range(1):
+                            self.transmit(addr, 4)
+                        self.missing = list(range(20))
                 elif packet_type == 4:
                     break
         return True
@@ -95,6 +102,7 @@ def main():
     args = arguments()
     c = Client(args)
     c.connection()
+    f = open(c.args.output_file, "ab+")
 
     start = time.time()
     print("Awaiting engineering packet...")
@@ -107,10 +115,17 @@ def main():
                 eng_pkt = True
 
         print("Attempting to receive data...")
-        while not complete:
-            missing = list(range(20))
-            if c.receive(missing):
-                complete = True
+        c.missing = list(range(20))
+        num_gens = c.total_packets // 20 + 10
+        print(num_gens)
+        for i in range(num_gens):
+            gen_complete = False
+            while not gen_complete:
+                if c.receive():
+                    c.missing = list(range(20))
+                    gen_complete = True
+                else:
+                    gen_complete = False
 
         f = open(c.args.output_file, "wb")
         for k in range(len(c.data)):
