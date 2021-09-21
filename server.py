@@ -25,6 +25,7 @@ class Server:
         self.packet_bytes = 1400
         self.total_packets = self.total_bytes // self.packet_bytes + 1
         self.gen_size = 20
+        self.gen_number = 0
 
     def connection(self):
         self.sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM, proto=socket.IPPROTO_UDP)
@@ -80,16 +81,18 @@ class Server:
                 packet = self.sock.recv(1400)
                 symbol = bytearray(packet[2:])
                 packet_type, = struct.unpack_from('<H', packet)
+                # Engineering type packet
                 if packet_type == 1:
                     if symbol not in self.clients:
                         self.clients.append(symbol)
                     break
+                # Request for re-send
                 elif packet_type == 3:
                     res = pickle.loads(symbol)
                     for i in res:
                         self.transmit(self.create_packet(2, i, self.data[i]))
-                    for i in range(3):
-                        self.transmit(self.create_packet(3))      
+                    self.transmit(self.create_packet(3))
+                # No missing      
                 elif packet_type == 4:
                     break
         return True
@@ -149,21 +152,20 @@ def main():
         print(f"Number of gens calced: {num_gens}")
         # Initial transmission
         for i in range(num_gens):
+            s.gen_number = i
             print(i)
             packets = {}
             gen_complete = False
-            for j in range(s.gen_size):
-                data = s.get_data(seq)
-                packet = s.create_packet(2, seq, data)
-                s.transmit(packet)
+            for j in range(s.gen_size): 
+                s.transmit(s.create_packet(2, seq, s.get_data(seq)))
                 seq += 1
-            for k in range(3):
+            for k in range(1):
                 s.transmit(s.create_packet(3))
             while not gen_complete:
                 if s.receive():
                     gen_complete = True
-        
-            for l in range(3):
+
+            for l in range(1):
                 s.transmit(s.create_packet(4))
             
             print(f"Gen {i} complete")
