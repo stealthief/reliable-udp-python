@@ -1,7 +1,6 @@
 import time
 import pickle
 import smartudp as sudp
-from arguments import arguments
 
 def main():
     args = sudp.arguments()# Get arguments passed in

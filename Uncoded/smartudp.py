@@ -36,9 +36,11 @@ class Server(SmartUDP):
         self.address = (self.mcast_grp, self.mcast_port)
         file_stats = os.stat(self.args.file_path)
         self.total_bytes = file_stats.st_size
-        self.packet_bytes = self.args.packet_size  # Should be arg
+        self.packet_bytes = self.args.packet_size
         self.total_packets = self.total_bytes // self.packet_bytes + 1
-        self.num_gens = self.total_packets // self.gen_size + 1
+        if self.total_packets < self.gen_size:
+            self.gen_size = self.total_packets
+        self.num_gens = (-(-self.total_packets // self.gen_size))
 
     def connection(self):
         self.sock = socket.socket(
@@ -56,7 +58,7 @@ class Server(SmartUDP):
             return True
 
     def get_data(self, seq):
-        self.data[seq] = self.f.read(self.packet_bytes-18)
+        self.data[seq] = self.f.read(self.packet_bytes)
         return self.data[seq]
 
     def create_packet(self, packet_type, seq=0, payload=b''):
@@ -72,8 +74,8 @@ class Server(SmartUDP):
             self.total_packets,
             seq
         )
-        padding = bytearray(self.packet_bytes - (len(header) + len(payload)))
-        packet = header + payload + padding
+        #padding = bytearray(self.packet_bytes - (len(header) + len(payload)))
+        packet = header + payload
 
         return packet
 
@@ -113,7 +115,7 @@ class Client(SmartUDP):
         self.total_rx = 0
         self.erased = 0
         self.missing = []
-        self.gen_size = 20
+        self.gen_size = args.gen_size
         self.num_gens = 0
 
     def connection(self):
@@ -166,13 +168,15 @@ class Client(SmartUDP):
         while True:
             ready = select.select([self.sock], [], [], 1)
             if ready[0]:
-                packet, addr = self.sock.recvfrom(self.packet_bytes)
+                packet, addr = self.sock.recvfrom(self.packet_bytes + 18)
                 symbol = bytearray(packet[18:])
                 packet_type, self.total_bytes, self.packet_bytes, self.total_packets, seq = struct.unpack_from(
                     '<HIIII', packet)
                 # Engineering packet
                 if packet_type == 1:
-                    self.num_gens = self.total_packets // self.gen_size + 1
+                    self.num_gens = (-(-self.total_packets // self.gen_size))
+                    if self.total_packets < self.gen_size:
+                        self.gen_size = self.total_packets
                     return packet_type, addr
                 # Data received
                 elif packet_type == 2:

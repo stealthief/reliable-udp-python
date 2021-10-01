@@ -4,7 +4,7 @@ import time
 import pickle
 import queue
 import smartudp as sudp
-from arguments import arguments
+
 
 def main():
     args = sudp.arguments()
@@ -53,15 +53,16 @@ def main():
             elif type == 4:
                 s.clients[hostname] = 4
             # While clients are missing (state 3), send missing packets
-            if any(v == 3 for v in s.clients.values()):
-                for pkt in missing:
-                    s.transmit(s.create_packet(2, pkt, s.data[pkt]))
-                s.transmit(s.create_packet(3))
-                missing.clear()
-            # If all clients complete (state 4), send finished gen packet
-            elif all(v == 4 for v in s.clients.values()):
-                s.transmit(s.create_packet(5))
-                break
+            if all(v != 1 for v in s.clients.values()):
+                if any(v == 3 for v in s.clients.values()):
+                    for pkt in missing:
+                        s.transmit(s.create_packet(2, pkt, s.data[pkt]))
+                    s.transmit(s.create_packet(3))
+                    missing.clear()
+                # If all clients complete (state 4), send finished gen packet
+                elif all(v == 4 for v in s.clients.values()):
+                    s.transmit(s.create_packet(5))
+                    break
         # Reset client states to 1
         for client in s.clients:
             s.clients[client] = 1

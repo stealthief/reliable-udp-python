@@ -39,9 +39,6 @@ class Server(ncUDP):
         self.encoder = kodo.block.Encoder(self.field)
         self.generator = kodo.block.generator.RandomUniform(self.field)
         self.set_encoder()
-        
-        
-
     
     def connection(self):
         self.sock = socket.socket(
