@@ -63,7 +63,7 @@ class Server:
 
         return packet
 
-    def transmit(self, packet):
+    def transmit(self, packet, address=''):
         while True:
             ready = select.select([], [self.sock], [], 1)
             if ready[1]:
