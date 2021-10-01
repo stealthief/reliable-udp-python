@@ -49,7 +49,7 @@ def main():
     delta = time.time() - start
     print(f"Throughput: {c.total_bytes / delta} Bytes/s")
     print(f"Total erasure: {((c.erased)/(c.total_rx)) * 100}%")
-
+    c.sock.close()
     print("Processing finished.")
 
 if __name__ == '__main__':

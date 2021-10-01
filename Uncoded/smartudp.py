@@ -12,6 +12,7 @@ import platform
 MCAST_GRP = "224.1.1.1"
 MCAST_PORT = 5007
 
+
 class SmartUDP:
 
     def __init__(self, args):
@@ -115,6 +116,7 @@ class Client(SmartUDP):
         self.total_rx = 0
         self.erased = 0
         self.missing = []
+        self.erasure = args.erasure
         self.gen_size = args.gen_size
         self.num_gens = 0
 
@@ -145,7 +147,8 @@ class Client(SmartUDP):
         return packet
 
     def set_generation(self):
-        self.missing = list(range(self.gen_number*self.gen_size, self.gen_number*self.gen_size+self.gen_size))
+        self.missing = list(range(self.gen_number*self.gen_size,
+                            self.gen_number*self.gen_size+self.gen_size))
         return True
 
     def save_file(self):
@@ -181,7 +184,7 @@ class Client(SmartUDP):
                 # Data received
                 elif packet_type == 2:
                     self.total_rx += 1
-                    if random.uniform(0,100) > 0:
+                    if random.uniform(0, 100) > self.erasure:
                         if seq in self.missing:
                             self.data[seq] = symbol
                             self.missing.remove(seq)
@@ -203,48 +206,54 @@ class Client(SmartUDP):
                 return 0, 0
         return packet_type, addr
 
+
 def arguments():
-        parser = argparse.ArgumentParser()
-        ip = socket.gethostbyname(socket.gethostname())
+    parser = argparse.ArgumentParser()
+    ip = socket.gethostbyname(socket.gethostname())
 
-        """The parser takes a path to a file as input."""
-        parser.add_argument(
-            "--file-path",
-            type=str,
-            help="Path to the file which should be sent.",
-            default=os.path.realpath(__file__),
-        )
+    """The parser takes a path to a file as input."""
+    parser.add_argument(
+        "--file-path",
+        type=str,
+        help="Path to the file which should be sent.",
+        default=os.path.realpath(__file__),
+    )
 
-        parser.add_argument(
-            "--output-file",
-            type=str,
-            help="Path to the file which should be received.",
-            default="output_file",
-        )
-        
-        """The parser takes the target IP-address as input."""
-        parser.add_argument(
-            "--ip", type=str, help="The IP address to send to.", default=MCAST_GRP
-        )
+    parser.add_argument(
+        "--output-file",
+        type=str,
+        help="Path to the file which should be received.",
+        default="output_file",
+    )
 
-        """The parser takes the target port as input."""
-        parser.add_argument(
-            "--port", type=int, help="The port to send to.", default=MCAST_PORT
-        )
+    """The parser takes the target IP-address as input."""
+    parser.add_argument(
+        "--ip", type=str, help="The IP address to send to.", default=MCAST_GRP
+    )
 
-        """The parser takes the packet size in bytes."""
-        parser.add_argument(
-            "--packet-size", type=int, help="Packet size in bytes.", default=1400
-        )
+    """The parser takes the target port as input."""
+    parser.add_argument(
+        "--port", type=int, help="The port to send to.", default=MCAST_PORT
+    )
 
-        """The parser takes the generation size"""
-        parser.add_argument(
-            "--gen-size", type=int, help="Number of packets per generation.", default=20
-        )
+    """The parser takes the packet size in bytes."""
+    parser.add_argument(
+        "--packet-size", type=int, help="Packet size in bytes.", default=1400
+    )
 
-        """The parser takes the client number"""
-        parser.add_argument(
-            "--hostname", type=int, help="Client Number", default=0
-        )
-        args = parser.parse_args()
-        return args
+    """The parser takes the generation size"""
+    parser.add_argument(
+        "--gen-size", type=int, help="Number of packets per generation.", default=20
+    )
+
+    """The parser takes the client number"""
+    parser.add_argument(
+        "--hostname", type=int, help="Client Number", default=0
+    )
+
+    """The parser takes the erasure probability"""
+    parser.add_argument(
+        "--erasure", type=int, help="Erasure percentage", default=0
+    )
+    args = parser.parse_args()
+    return args

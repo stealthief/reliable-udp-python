@@ -14,8 +14,9 @@ import atexit
 MCAST_GRP = "224.1.1.1"
 MCAST_PORT = 5007
 
+
 class ncUDP:
-    
+
     def __init__(self, args):
         self.args = args
         self.mcast_grp = args.ip
@@ -23,8 +24,9 @@ class ncUDP:
         self.field = kodo.FiniteField.binary16
         self.gen_size = self.args.gen_size
 
+
 class Server(ncUDP):
-    
+
     def __init__(self, args):
         ncUDP.__init__(self, args)
         self.clients = {}
@@ -39,7 +41,7 @@ class Server(ncUDP):
         self.encoder = kodo.block.Encoder(self.field)
         self.generator = kodo.block.generator.RandomUniform(self.field)
         self.set_encoder()
-    
+
     def connection(self):
         self.sock = socket.socket(
             family=socket.AF_INET, type=socket.SOCK_DGRAM, proto=socket.IPPROTO_UDP)
@@ -62,9 +64,10 @@ class Server(ncUDP):
         self.coefficients = bytearray(self.generator.max_coefficients_bytes)
 
     def create_gen(self):
-        self.data = bytearray(self.f.read(self.encoder.block_bytes).ljust(self.encoder.block_bytes))
+        self.data = bytearray(self.f.read(
+            self.encoder.block_bytes).ljust(self.encoder.block_bytes))
         #data = bytearray(os.urandom(self.encoder.block_bytes))
-        #print((-(-len(data)//self.packet_bytes)))
+        # print((-(-len(data)//self.packet_bytes)))
         self.gen_size = (-(-len(self.data)//self.packet_bytes))
         self.set_encoder()
         self.encoder.set_symbols_storage(self.data)
@@ -126,7 +129,7 @@ class Server(ncUDP):
 
 
 class Client(ncUDP):
-    
+
     def __init__(self, args):
         ncUDP.__init__(self, args)
         self.decoder = kodo.block.Decoder(self.field)
@@ -135,6 +138,7 @@ class Client(ncUDP):
         self.hostname = args.hostname
         self.erased = 0
         self.total_rx = 0
+        self.erasure = args.erasure
         if os.path.exists('output_file'):
             os.remove('output_file')
 
@@ -158,7 +162,7 @@ class Client(ncUDP):
         self.coefficients = bytearray(self.generator.max_coefficients_bytes)
         self.data.clear()
         self.data = bytearray(self.decoder.block_bytes)
-        self.decoder.set_symbols_storage(self.data) 
+        self.decoder.set_symbols_storage(self.data)
         self.missing = self.gen_size
 
     def create_packet(self, packet_type, payload=b''):
@@ -200,22 +204,23 @@ class Client(ncUDP):
                     '<HQQBIIH', packet)
                 self.total_packets = self.total_bytes // self.packet_bytes + 1
                 # Engineering packet
-                if packet_type == 1: 
+                if packet_type == 1:
                     self.num_gens = (-(-self.total_packets // self.gen_size))
                     self.decoder.configure(self.gen_size, self.packet_bytes)
                     self.generator.configure(self.decoder.symbols)
                     self.symbol = bytearray(self.decoder.symbol_bytes)
-                    self.coefficients = bytearray(self.generator.max_coefficients_bytes)
+                    self.coefficients = bytearray(
+                        self.generator.max_coefficients_bytes)
                     self.data = bytearray(self.decoder.block_bytes)
-                    self.decoder.set_symbols_storage(self.data) 
+                    self.decoder.set_symbols_storage(self.data)
                     self.missing = self.gen_size
-                    self.full_gen = self.gen_size 
+                    self.full_gen = self.gen_size
                     break
 
                 # Data received
                 elif packet_type == 2:
                     self.total_rx += 1
-                    if random.uniform(0,100) > 0:
+                    if random.uniform(0, 100) > self.erasure:
                         if self.gen_size != self.full_gen:
                             self.next_gen()
                         self.generator.set_seed(seed)
@@ -240,6 +245,7 @@ class Client(ncUDP):
                 return 0, 0
         return packet_type, addr
 
+
 def arguments():
     parser = argparse.ArgumentParser()
     ip = socket.gethostbyname(socket.gethostname())
@@ -258,7 +264,7 @@ def arguments():
         help="Path to the file which should be received.",
         default="output_file",
     )
-    
+
     """The parser takes the target IP-address as input."""
     parser.add_argument(
         "--ip", type=str, help="The IP address to send to.", default=MCAST_GRP
@@ -282,6 +288,11 @@ def arguments():
     """The parser takes the client number"""
     parser.add_argument(
         "--hostname", type=int, help="Client Number", default=0
+    )
+
+    """The parser takes the erasure probability"""
+    parser.add_argument(
+        "--erasure", type=int, help="Erasure percentage", default=0
     )
     args = parser.parse_args()
     return args

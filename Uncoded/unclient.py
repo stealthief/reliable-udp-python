@@ -6,6 +6,7 @@ def main():
     args = sudp.arguments()# Get arguments passed in
     c = sudp.Client(args) # Initialise client
     c.connection() # Create client socket
+    erased = 0
 
     print("Awaiting connection...")
     # Receive engineering packet
@@ -25,7 +26,7 @@ def main():
         while c.missing:
             type, addr = c.receive()
             if type == 3:
-                #c.erased += len(c.missing)
+                erased += len(c.missing)
                 res = pickle.dumps(c.missing)
                 c.transmit(c.create_packet(3, res), addr)
         c.transmit(c.create_packet(4), addr)   
@@ -49,6 +50,7 @@ def main():
     # Print out thrroughput and erasure
     print(f"Throughput: {c.total_bytes / delta} Bytes/s")
     print(f"Total erasure: {((c.erased)/(c.total_rx)) * 100}%")
-
+    print(f"Actual erasure: {erased}")
+    c.sock.close()
 if __name__ == '__main__':
     main()
