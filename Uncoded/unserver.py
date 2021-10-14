@@ -5,7 +5,6 @@ import pickle
 import queue
 import smartudp as sudp
 
-
 def main():
     args = sudp.arguments()
     s = sudp.Server(args)
@@ -16,7 +15,7 @@ def main():
     # Send eng packets
     for _ in range(3):
         s.transmit(s.create_packet(1))
-    print("Sent eng packet...")
+    print("\nSent engineering packet, awaiting response...")
 
     # Wait and receive any responses from clients
     timeout = time.time() + 0.1
@@ -24,11 +23,10 @@ def main():
         type, symbol, hostname = s.receive()
         if type == 1:
             s.clients[hostname] = 1
-            print("Added client")
-            print(s.clients)
         else:
             if time.time() > timeout:
                 break
+    print(f"> Connected to {len(s.clients)} client(s)\n-------------------------------------")
         
     # Start sending generations
     for x in range(s.num_gens):
@@ -37,6 +35,7 @@ def main():
         for y in range(s.gen_size):
             s.transmit(s.create_packet(2, s.seq, s.get_data(s.seq)))
             s.seq += 1
+            s.tx += 1
         for _ in range(1):
             s.transmit(s.create_packet(3))
 
@@ -57,6 +56,7 @@ def main():
                 if any(v == 3 for v in s.clients.values()):
                     for pkt in missing:
                         s.transmit(s.create_packet(2, pkt, s.data[pkt]))
+                        s.tx += 1
                     s.transmit(s.create_packet(3))
                     missing.clear()
                 # If all clients complete (state 4), send finished gen packet
@@ -64,6 +64,7 @@ def main():
                     s.transmit(s.create_packet(5))
                     break
         # Reset client states to 1
+        s.progressBar(x+1, s.num_gens, 'Tx')
         for client in s.clients:
             s.clients[client] = 1
             
@@ -71,7 +72,8 @@ def main():
     for _ in range(1):
         s.transmit(s.create_packet(6))
 
-    print('File transfer complete.')
+    print('\nFile transfer complete!\n-------------------------------------')
+    print(f'Re-transmit rate: {round(((s.tx / s.total_packets) -1)*100, 1)} %\n')
     s.sock.close()
     s.f.close()
 

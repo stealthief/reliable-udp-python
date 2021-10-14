@@ -8,13 +8,13 @@ def main():
     c.connection()
     data_out = bytearray()
 
-    print("Awaiting connection...")
+    print("\nClient initialised, awaiting connection...")
 
     while True:
         type, addr = c.receive()
         if type == 1:
             c.transmit(c.create_packet(1), addr)
-            print("Connected to server...")
+            print(f"> Connected to server: {addr[0]}:{addr[1]}\n-------------------------------------")
             break
 
     start = time.time() + 0.1
@@ -33,24 +33,24 @@ def main():
         #print("Generation decoded")
         while True:
             type, addr = c.receive()
+    
             if type == 5:
-                if c.decoder.is_complete():
-                    #c.save_file()
-                    data_out.extend(c.data)
-                    c.next_gen()
-                    break
-
+                c.progressBar(x+1, c.num_gens, 'Rx')
+                data_out.extend(c.data)
+                c.next_gen()
+                break
+            
+    
     while True:
         type, addr = c.receive()
         if type == 6:
             c.save_file(data_out)
             break
-
+    print("\nFile transfer complete!\n-------------------------------------")
     delta = time.time() - start
-    print(f"Throughput: {c.total_bytes / delta} Bytes/s")
-    print(f"Total erasure: {((c.erased)/(c.total_rx)) * 100}%")
+    print(f"Decode Rate: {round((c.total_bytes / delta)/1e6, 2)} MBytes/s")
+    print(f"Erasure Rate: {round(((c.erased)/(c.total_rx)) * 100, 1)}%\n")
     c.sock.close()
-    print("Processing finished.")
 
 if __name__ == '__main__':
     main()

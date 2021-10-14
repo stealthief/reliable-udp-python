@@ -8,7 +8,7 @@ import select
 import sys
 import time
 import random
-
+import hashlib
 import atexit
 
 MCAST_GRP = "224.1.1.1"
@@ -23,6 +23,26 @@ class ncUDP:
         self.mcast_port = args.port
         self.field = kodo.FiniteField.binary16
         self.gen_size = self.args.gen_size
+
+    def progressBar (self, iteration, total, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            decimals    - Optional  : positive number of decimals in percent complete (Int)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        """
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + '-' * (length - filledLength)
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+        # Print New Line on Complete
+        if iteration == total: 
+            print()
 
 
 class Server(ncUDP):
@@ -41,6 +61,8 @@ class Server(ncUDP):
         self.encoder = kodo.block.Encoder(self.field)
         self.generator = kodo.block.generator.RandomUniform(self.field)
         self.set_encoder()
+        self.tx = 0
+        self.current_gen = 0
 
     def connection(self):
         self.sock = socket.socket(
@@ -55,6 +77,9 @@ class Server(ncUDP):
             sys.exit(1)
         else:
             self.f = open(os.path.expanduser(self.args.file_path), 'rb')
+            enc_file = self.args.file_path.encode()
+            hash_obj = hashlib.sha1(enc_file)
+            self.hex_val = hash_obj.hexdigest()
             return True
 
     def set_encoder(self):
@@ -66,11 +91,10 @@ class Server(ncUDP):
     def create_gen(self):
         self.data = bytearray(self.f.read(
             self.encoder.block_bytes).ljust(self.encoder.block_bytes))
-        #data = bytearray(os.urandom(self.encoder.block_bytes))
-        # print((-(-len(data)//self.packet_bytes)))
         self.gen_size = (-(-len(self.data)//self.packet_bytes))
         self.set_encoder()
         self.encoder.set_symbols_storage(self.data)
+
 
     def create_packet(self, packet_type):
         header_data = bytearray(29)
@@ -112,7 +136,7 @@ class Server(ncUDP):
         while True:
             ready = select.select([self.sock], [], [], 1)
             if ready[0]:
-                packet = self.sock.recv(self.packet_bytes)
+                packet = self.sock.recv(self.packet_bytes + 6)
                 symbol = bytearray(packet[6:])
                 packet_type, hostname = struct.unpack_from('<HI', packet)
                 # Engineering type packet
@@ -138,7 +162,7 @@ class Client(ncUDP):
         self.hostname = args.hostname
         self.erased = 0
         self.total_rx = 0
-        self.erasure = args.erasure
+        self.erasure = random.uniform(args.erasurelow, args.erasurehigh)
         if os.path.exists('output_file'):
             os.remove('output_file')
 
@@ -155,7 +179,7 @@ class Client(ncUDP):
         return True
 
     def next_gen(self):
-
+        self.decoder = kodo.block.Decoder(self.field)
         self.decoder.configure(self.gen_size, self.packet_bytes)
         self.generator.configure(self.decoder.symbols)
         self.symbol = bytearray(self.decoder.symbol_bytes)
@@ -174,24 +198,25 @@ class Client(ncUDP):
             packet_type,
             self.hostname
         )
-        padding = bytearray(self.packet_bytes - (len(header) + len(payload)))
+        #padding = bytearray(self.packet_bytes - (len(header) + len(payload)))
         packet = header + payload
 
         return packet
 
     def save_file(self, data):
         self.f = open(self.args.output_file, "wb")
-        self.f.write(data)
+        self.f.write(data.strip())
+        #self.f.write(data)
         self.f.close()
-        print("Gen received")
+        enc_file = self.args.output_file.encode()
+        hash_obj = hashlib.sha1(enc_file)
+        self.hex_val = hash_obj.hexdigest()
         return True
 
     def transmit(self, packet, address):
-        while True:
-            ready = select.select([], [self.sock], [], 1)
-            if ready[1]:
-                self.sock.sendto(packet, address)
-                break
+        ready = select.select([], [self.sock], [], 1)
+        if ready[1]:
+            self.sock.sendto(packet, address)
         return True
 
     def receive(self):
@@ -292,7 +317,12 @@ def arguments():
 
     """The parser takes the erasure probability"""
     parser.add_argument(
-        "--erasure", type=int, help="Erasure percentage", default=0
+        "--erasurelow", type=int, help="Erasure low percentage", default=0
+    )
+
+    """The parser takes the erasure probability"""
+    parser.add_argument(
+        "--erasurehigh", type=int, help="Erasure high percentage", default=0
     )
     args = parser.parse_args()
     return args

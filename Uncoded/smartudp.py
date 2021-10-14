@@ -8,6 +8,7 @@ import random
 import select
 import pickle
 import platform
+import hashlib
 
 MCAST_GRP = "224.1.1.1"
 MCAST_PORT = 5007
@@ -28,6 +29,26 @@ class SmartUDP:
     def __str__(self):
         return f'Created'
 
+    def progressBar (self, iteration, total, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            decimals    - Optional  : positive number of decimals in percent complete (Int)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        """
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + '-' * (length - filledLength)
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+        # Print New Line on Complete
+        if iteration == total: 
+            print()
+
 
 class Server(SmartUDP):
 
@@ -42,6 +63,7 @@ class Server(SmartUDP):
         if self.total_packets < self.gen_size:
             self.gen_size = self.total_packets
         self.num_gens = (-(-self.total_packets // self.gen_size))
+        self.tx = 0
 
     def connection(self):
         self.sock = socket.socket(
@@ -56,6 +78,9 @@ class Server(SmartUDP):
             sys.exit(1)
         else:
             self.f = open(os.path.expanduser(self.args.file_path), 'rb')
+            enc_file = os.path.expanduser(self.args.file_path).encode()
+            hash_obj = hashlib.sha1(enc_file)
+            self.hex_val = hash_obj.hexdigest()
             return True
 
     def get_data(self, seq):
@@ -75,17 +100,13 @@ class Server(SmartUDP):
             self.total_packets,
             seq
         )
-        #padding = bytearray(self.packet_bytes - (len(header) + len(payload)))
         packet = header + payload
-
         return packet
 
     def transmit(self, packet):
-        while True:
-            ready = select.select([], [self.sock], [], 1)
-            if ready[1]:
-                self.sock.sendto(packet, self.address)
-                break
+        ready = select.select([], [self.sock], [], 1)
+        if ready[1]:
+            self.sock.sendto(packet, self.address)
         return True
 
     def receive(self):
@@ -116,7 +137,7 @@ class Client(SmartUDP):
         self.total_rx = 0
         self.erased = 0
         self.missing = []
-        self.erasure = args.erasure
+        self.erasure = random.uniform(args.erasurelow, args.erasurehigh)
         self.gen_size = args.gen_size
         self.num_gens = 0
 
@@ -156,7 +177,9 @@ class Client(SmartUDP):
         for k in range(len(self.data)):
             f.write(self.data[k])
         f.close()
-        print("File received")
+        enc_file = self.args.output_file.encode()
+        hash_obj = hashlib.sha1(enc_file)
+        self.hex_val = hash_obj.hexdigest()
         return True
 
     def transmit(self, packet, address):
@@ -253,7 +276,12 @@ def arguments():
 
     """The parser takes the erasure probability"""
     parser.add_argument(
-        "--erasure", type=int, help="Erasure percentage", default=0
+        "--erasurelow", type=int, help="Erasure low percentage", default=0
+    )
+
+    """The parser takes the erasure probability"""
+    parser.add_argument(
+        "--erasurehigh", type=int, help="Erasure high percentage", default=0
     )
     args = parser.parse_args()
     return args
