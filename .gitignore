@@ -1,6 +1,9 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
 *.jpg
 *.mp3
 output_file
 kodo.pyd
 testdata
-**/__pycache__/
