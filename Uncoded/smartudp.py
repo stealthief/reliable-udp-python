@@ -3,11 +3,8 @@ import os
 import socket
 import sys
 import struct
-import time
 import random
 import select
-import pickle
-import platform
 import hashlib
 
 MCAST_GRP = "224.1.1.1"
