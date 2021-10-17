@@ -3,4 +3,4 @@
 output_file
 kodo.pyd
 testdata
-./__pycache__
+__pycache__/
