@@ -5,4 +5,9 @@ A custom, reliable UDP protocol written in Python to enable the transfer of larg
 
 ## Background
 
+![uncoded-theory](img/uncoded.gif)
+![rlnc-theory](img/coded.gif)
+
+![uncoded-demo](img/uncodedVid.gif)
+![rlnc-demo](img/codedVid.gif)
 
