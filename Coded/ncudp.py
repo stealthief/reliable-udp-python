@@ -6,18 +6,42 @@ import socket
 import struct
 import select
 import sys
-import time
 import random
 import hashlib
-import atexit
 
 MCAST_GRP = "224.1.1.1"
 MCAST_PORT = 5007
 
 
 class ncUDP:
+    """
+    A class to enable the reliable transmission of data via multi-cast UDP sockets between a server and multiple clients using network coding.
+    ...
+    Attributes
+    ----------
+    args : Array
+        an array of input arguments collected at runtime
+    mcast_grp : str
+        a string containing the multi-cast IP address
+    mcast_port : int
+        an integer representing the port used for multi-cast
+    field : kodo.FiniteField
+        an Kodo constant setting the finite field size for the encoder/decoder
+    gen_size : int
+        an integer representing the configured generation size
 
+    Methods
+    -------
+    progressBar(self, iteration, total, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r")
+        Prints a transmission progress bar to the terminal during transmission
+    """
     def __init__(self, args):
+        """
+        Parameters
+        ----------
+        args : list
+            Arguments parsed in at runtime, used to initialise variables.
+        """
         self.args = args
         self.mcast_grp = args.ip
         self.mcast_port = args.port
@@ -26,16 +50,19 @@ class ncUDP:
 
     def progressBar (self, iteration, total, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
         """
-        Call in a loop to create terminal progress bar
-        @params:
-            iteration   - Required  : current iteration (Int)
-            total       - Required  : total iterations (Int)
-            prefix      - Optional  : prefix string (Str)
-            decimals    - Optional  : positive number of decimals in percent complete (Int)
-            length      - Optional  : character length of bar (Int)
-            fill        - Optional  : bar fill character (Str)
-            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        Call in a loop to create terminal progress bar.
+
+        Parameters
+        ----------
+            iteration : current iteration (Int)
+            total : total iterations (Int)
+            prefix : prefix string (Str), optional
+            decimals : positive number of decimals in percent complete (Int), optional
+            length : character length of bar (Int), optional
+            fill : bar fill character (Str), optional
+            printEnd : end character (e.g. "\r", "\r\n") (Str), optional
         """
+
         percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
         filledLength = int(length * iteration // total)
         bar = fill * filledLength + '-' * (length - filledLength)
@@ -46,6 +73,46 @@ class ncUDP:
 
 
 class Server(ncUDP):
+    """
+    A class to enable a server to reliably transmit network coded data via multi-cast UDP socket to a client
+    ...
+    Attributes
+    ----------
+    clients : dict
+        a dictionary storing client hostname keys with state values
+    address : tuple
+        a tuple containing the IP address and port information for the multi-cast group
+    total_bytes : int
+        an integer representing the total number of bytes of data in the target file
+    packet_bytes : int
+        an integer representing the number of bytes per packet
+    total_packets : int
+        an integer representing the total number of packets of data to be transmitted
+    num_gens : int
+        an integer representing the total number of generations required to transmit the target file
+    tx : int
+        an integer storing the total number of data packets transmitted
+    current_gen : int
+        an integer storing the current generation number
+    
+
+    Methods
+    -------
+    connection()
+        Creates UDP network socket
+    open_file()
+        Opens target file for reading
+    set_encoder()
+        Configures the network coding encoder for the next generation
+    create_gen()
+        Reads next generation of data from target file and loads into encoder
+    create_packet(packet_type, seq=0, payload=b'')
+        Creates a packet with header and encoded packet data
+    transmit(packet)
+        Transmits packet via socket
+    receive()
+        Receives packets via socket
+    """
 
     def __init__(self, args):
         ncUDP.__init__(self, args)
@@ -65,6 +132,9 @@ class Server(ncUDP):
         self.current_gen = 0
 
     def connection(self):
+        """
+        Initialises a multi-cast UDP socket with the multi-cast IP and port provided
+        """
         self.sock = socket.socket(
             family=socket.AF_INET, type=socket.SOCK_DGRAM, proto=socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
@@ -72,6 +142,9 @@ class Server(ncUDP):
         return True
 
     def open_file(self):
+        """
+        Opens the target file to be read as bytes
+        """
         if not os.path.isfile(self.args.file_path):
             print(f"{self.args.file_path} is not a valid file.")
             sys.exit(1)
@@ -83,12 +156,18 @@ class Server(ncUDP):
             return True
 
     def set_encoder(self):
+        """
+        Sets the Kodo RLNC block encoder using the correct parameters for packet size and generation size. Also sets the coefficients object to the correct size
+        """
         self.encoder.configure(self.gen_size, self.packet_bytes)
         self.symbol = bytearray(self.encoder.symbol_bytes)
         self.generator.configure(self.encoder.symbols)
         self.coefficients = bytearray(self.generator.max_coefficients_bytes)
 
     def create_gen(self):
+        """
+        Reads a new generation of packets from the target file and loads them into the encoder ready to create coded packets.
+        """
         self.data = bytearray(self.f.read(
             self.encoder.block_bytes).ljust(self.encoder.block_bytes))
         self.gen_size = (-(-len(self.data)//self.packet_bytes))
@@ -97,9 +176,35 @@ class Server(ncUDP):
 
 
     def create_packet(self, packet_type):
+        """
+        Creates a packet header containing:
+            packet_type
+            seed,
+            field.value
+            total_bytes
+            packet_bytes
+            gen_size
+        
+        If a payload (data) is included, this is appended to the header.
+
+        Parameters
+        ----------
+        packet_type : int
+            An integer to represent the packet type:
+                1: Engineering
+                2: Data
+                3: End generation
+                5: Moving to next generation
+                6: File transfer complete
+
+        Returns
+        -------
+        A packet containing header and payload
+        """
+
         header_data = bytearray(29)
         if packet_type == 2:
-            seed = random.randint(0, 2 ** 64-1)
+            seed = random.randint(0, 2 ** 64-1) # Set a seed so clients generate same coefficients
             self.generator.set_seed(seed)
             self.generator.generate(self.coefficients)
             self.encoder.encode_symbol(self.symbol, self.coefficients)
@@ -125,6 +230,15 @@ class Server(ncUDP):
         return packet
 
     def transmit(self, packet):
+        """
+        Transmits a coded packet via the multi-cast socket
+
+        Parameters
+        ----------
+        packet : bytes
+            Bytes representing a single packet from the create_packet method
+        """
+
         while True:
             ready = select.select([], [self.sock], [], 1)
             if ready[1]:
@@ -133,6 +247,24 @@ class Server(ncUDP):
         return True
 
     def receive(self):
+        """
+        Receives and processes packets from clients
+
+        Returns
+        -------
+        packet_type : int
+            The type of packet received:
+                1: Engineering
+                3: Missing packets
+                4: Generation complete
+
+        symbol : bytes
+            The payload of the received packet
+
+        hostname : str
+            The hostname of the source client, for updating the client dictionary
+        """
+
         while True:
             ready = select.select([self.sock], [], [], 1)
             if ready[0]:
@@ -142,9 +274,10 @@ class Server(ncUDP):
                 # Engineering type packet
                 if packet_type == 1:
                     break
-                # Request for re-send
+                # Request for re-transmit
                 elif packet_type == 3:
                     break
+                # No missing packets
                 elif packet_type == 4:
                     break
             else:
@@ -153,7 +286,41 @@ class Server(ncUDP):
 
 
 class Client(ncUDP):
+    """
+    A class to enable a client to reliably receive network coded data via multi-cast UDP sockets from a server.
+    ...
+    Attributes
+    ----------
+    decoder : Kodo decoder
+        a Kodo decoder object used to store coded packets and decode them
+    generator : Kodo generator
+        a Kodo generator object used to generate coefficients required to decode packets
+    missing : int
+        an integer to store the number of missing packets
+    hostname : str
+        a string containing the client hostname
+    erased : int
+        an integer to store the number of missed packets
+    total_rx : int
+        an integer to store the total number of received packets
+    erasure : float
+        a float representing the chance of packet erasure as a percentage
 
+    Methods
+    -------
+    connection()
+        Creates UDP network socket
+    next_gen()
+        Configures the decoder and generator in preparation for the next generation of coded packets
+    create_packet(packet_type, seq=0, payload=b'')
+        Creates a packet with header and data
+    save_file()
+        Opens the output file and writes all received data to it
+    transmit(packet)
+        Transmits packet via socket
+    receive()
+        Receives packets via socket
+    """
     def __init__(self, args):
         ncUDP.__init__(self, args)
         self.decoder = kodo.block.Decoder(self.field)
@@ -167,6 +334,9 @@ class Client(ncUDP):
             os.remove('output_file')
 
     def connection(self):
+        """
+        Initialises a multi-cast UDP socket with the multi-cast IP and port provided
+        """
         self.sock = socket.socket(
             family=socket.AF_INET, type=socket.SOCK_DGRAM, proto=socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -179,6 +349,9 @@ class Client(ncUDP):
         return True
 
     def next_gen(self):
+        """
+        Configure the decoder and generator in preparation to receive the next generation of coded packets
+        """
         self.decoder = kodo.block.Decoder(self.field)
         self.decoder.configure(self.gen_size, self.packet_bytes)
         self.generator.configure(self.decoder.symbols)
@@ -190,6 +363,29 @@ class Client(ncUDP):
         self.missing = self.gen_size
 
     def create_packet(self, packet_type, payload=b''):
+        """
+        Creates a packet header containing:
+            packet_type
+            hostname
+        
+        If a payload (data) is included, this is appended to the header.
+
+        Parameters
+        ----------
+        packet_type : int
+            An integer to represent the packet type:
+                1: Engineering ACK
+                3: Missing packets
+                4: Generation complete
+
+        payload : bytes, default=b''
+            A byte stream of data representing a serialised version of missing packets number. Default is empty if not a data packet
+
+        Returns
+        -------
+        A packet containing header and payload
+        """
+
         header = bytearray(6)
         struct.pack_into(
             '<HI',
@@ -198,12 +394,13 @@ class Client(ncUDP):
             packet_type,
             self.hostname
         )
-        #padding = bytearray(self.packet_bytes - (len(header) + len(payload)))
         packet = header + payload
-
         return packet
 
     def save_file(self, data):
+        """
+        Opens the output file for writing bytes and writes all received data to the file before closing.
+        """
         self.f = open(self.args.output_file, "wb")
         self.f.write(data.strip())
         #self.f.write(data)
@@ -214,12 +411,37 @@ class Client(ncUDP):
         return True
 
     def transmit(self, packet, address):
+        """
+        Transmits a packet via uni-cast to the server
+
+        Parameters
+        ----------
+        packet : bytes
+            Bytes representing a single packet from the create_packet method
+        """
+
         ready = select.select([], [self.sock], [], 1)
         if ready[1]:
             self.sock.sendto(packet, address)
         return True
 
     def receive(self):
+        """
+        Receives and processes packets from the server
+
+        Returns
+        -------
+        packet_type : int
+            The type of packet received:
+                1: Engineering
+                2: Data
+                3: End generation
+                5: ACK Generation complete
+                6: File complete
+
+        addr : str
+            The hostname of the server, for uni-cast responses
+        """
         while True:
             ready = select.select([self.sock], [], [], 1)
             if ready[0]:
@@ -229,7 +451,7 @@ class Client(ncUDP):
                     '<HQQBIIH', packet)
                 self.total_packets = self.total_bytes // self.packet_bytes + 1
                 # Engineering packet
-                if packet_type == 1:
+                if packet_type == 1: # Initial configuration of the decoder and generator ready to receive the first generation
                     self.num_gens = (-(-self.total_packets // self.gen_size))
                     self.decoder.configure(self.gen_size, self.packet_bytes)
                     self.generator.configure(self.decoder.symbols)
@@ -250,16 +472,12 @@ class Client(ncUDP):
                             self.next_gen()
                         self.generator.set_seed(seed)
                         self.generator.generate(self.coefficients)
-                        self.decoder.decode_symbol(symbol, self.coefficients)
+                        self.decoder.decode_symbol(symbol, self.coefficients) # Try to decode
                         self.missing -= 1
                     else:
                         self.erased += 1
-
-            # Initial send complete, request re-send
+                # Initial send complete, request re-send
                 elif packet_type == 3:
-                    break
-                # Ack gen complete
-                elif packet_type == 4:
                     break
                 # File complete
                 elif packet_type == 5:
@@ -272,6 +490,45 @@ class Client(ncUDP):
 
 
 def arguments():
+    """
+    A helper method called prior to class object instantiation to collate all input arguments for use by the constructor methods in setting variables.
+
+    Parameters
+    ----------
+    --file-path : str
+        The path to the file which should be sent
+
+    --output-file : str
+        The path to where the received file should be saved
+
+    --ip : str
+        The multi-cast group IP address
+
+    --port : int
+        The multi-cast port
+
+    --packet-size : int
+        The desired packet size in bytes
+
+    --gen-size : int
+        The desired number of packets per generation
+
+    --hostname : str
+        The hostname of the client
+        Default is the actual hostname, but in virtual environments a unique hostname must be assigned per client
+
+    --erasurelow : int
+        The lower bound on erasure probability setting (%)
+
+    --erasurehigh : int
+        The upper bound on erasure probability setting (%)
+
+    Returns
+    -------
+    args : list
+        list of all arguments parsed in at runtime
+    
+    """
     parser = argparse.ArgumentParser()
     ip = socket.gethostbyname(socket.gethostname())
 
@@ -282,45 +539,30 @@ def arguments():
         help="Path to the file which should be sent.",
         default=os.path.realpath(__file__),
     )
-
     parser.add_argument(
         "--output-file",
         type=str,
         help="Path to the file which should be received.",
         default="output_file",
     )
-
-    """The parser takes the target IP-address as input."""
     parser.add_argument(
         "--ip", type=str, help="The IP address to send to.", default=MCAST_GRP
     )
-
-    """The parser takes the target port as input."""
     parser.add_argument(
         "--port", type=int, help="The port to send to.", default=MCAST_PORT
     )
-
-    """The parser takes the packet size in bytes."""
     parser.add_argument(
         "--packet-size", type=int, help="Packet size in bytes.", default=1400
     )
-
-    """The parser takes the generation size"""
     parser.add_argument(
         "--gen-size", type=int, help="Number of packets per generation.", default=20
     )
-
-    """The parser takes the client number"""
     parser.add_argument(
-        "--hostname", type=int, help="Client Number", default=0
+        "--hostname", type=int, help="Client hostname", default=ip
     )
-
-    """The parser takes the erasure probability"""
     parser.add_argument(
         "--erasurelow", type=int, help="Erasure low percentage", default=0
     )
-
-    """The parser takes the erasure probability"""
     parser.add_argument(
         "--erasurehigh", type=int, help="Erasure high percentage", default=0
     )
